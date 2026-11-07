@@ -10,6 +10,20 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim());
 });
 
+// Opening the app with no internet shows a short message instead of the browser's error page.
+// Chrome also wants a real fetch handler before it offers "install app".
+self.addEventListener('fetch', function (event) {
+  if (event.request.mode !== 'navigate') return;
+  event.respondWith(
+    fetch(event.request).catch(function () {
+      return new Response(
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center" dir="rtl"><p style="font-size:20px">مفيش نت. افتح تاني لما يرجع.</p></body>',
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
+    })
+  );
+});
+
 self.addEventListener('push', function (event) {
   var data = {};
   try {

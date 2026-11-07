@@ -242,6 +242,198 @@
     }
   });
 
+  // ---- The first thing a person sees: ask for notifications with one big tap, and offer to install ----
+  var SVG_SHARE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m8 7 4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  var SVG_ADD = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>';
+  var SVG_BELL = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+  var installEvent = null;
+  var card = null;
+
+  function laterThisSession() {
+    try { return sessionStorage.getItem('uo_card_later') === '1'; } catch (e) { return false; }
+  }
+  function rememberLater() {
+    try { sessionStorage.setItem('uo_card_later', '1'); } catch (e) { /* shown again next time */ }
+  }
+
+  function cardState() {
+    if (isIOS && !standalone) return 'ios-install';
+    if (!pushSupported()) return null;
+    var p = permission();
+    if (p === 'granted') return null;
+    return p === 'denied' ? 'denied' : 'ask';
+  }
+
+  function el(tag, css, text) {
+    var node = document.createElement(tag);
+    if (css) node.style.cssText = css;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function stepRow(number, text, iconSvg) {
+    var row = el('li', 'display:flex;align-items:center;gap:10px;margin:0 0 12px;font-size:17px;text-align:start');
+    row.appendChild(el('span', 'flex:none;width:28px;height:28px;border-radius:50%;background:#78350f;color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center', String(number)));
+    row.appendChild(el('span', 'flex:1', text));
+    if (iconSvg) {
+      var icon = el('span', 'flex:none;display:flex');
+      icon.innerHTML = iconSvg; // fixed pictures written above, never text from outside
+      row.appendChild(icon);
+    }
+    return row;
+  }
+
+  function removeCard() {
+    if (card) card.remove();
+    card = null;
+  }
+
+  function renderCard() {
+    var state = cardState();
+    if (!state || laterThisSession()) return removeCard();
+    removeCard();
+    card = el('div', 'position:fixed;inset:0;z-index:20;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 22px calc(24px + env(safe-area-inset-bottom));box-sizing:border-box;text-align:center;font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif');
+    card.id = 'uo-card';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('data-state', state);
+    var icon = el('div', 'margin-bottom:18px');
+    icon.innerHTML = SVG_BELL;
+    card.appendChild(icon);
+
+    var title = state === 'ios-install' ? 'ثبّت التطبيق على الآيفون' : state === 'denied' ? 'الإشعارات ممنوعة' : 'فعّل الإشعارات';
+    card.appendChild(el('h1', 'margin:0 0 10px;font-size:26px;font-weight:700', title));
+
+    if (state === 'ask') {
+      card.appendChild(el('p', 'margin:0 0 26px;font-size:17px;color:#d6d3d1;max-width:320px', 'عشان توصلك الرسايل بصوت حتى والبرنامج مقفول.'));
+      var enable = el('button', 'width:100%;max-width:340px;min-height:60px;border:0;border-radius:18px;background:#fff;color:#000;font-size:20px;font-weight:700;font-family:inherit', 'فعّل الإشعارات');
+      enable.id = 'uo-card-enable';
+      enable.addEventListener('click', onEnableTap);
+      card.appendChild(enable);
+      if (installEvent) card.appendChild(installButton());
+    } else if (state === 'ios-install') {
+      card.appendChild(el('p', 'margin:0 0 20px;font-size:16px;color:#d6d3d1;max-width:320px', 'الإشعارات على الآيفون بتشتغل بعد التثبيت:'));
+      var steps = el('ol', 'list-style:none;padding:18px 16px 6px;margin:0 0 8px;width:100%;max-width:340px;box-sizing:border-box;background:#fff;color:#1c1917;border-radius:18px');
+      steps.id = 'uo-card-steps';
+      steps.appendChild(stepRow(1, 'افتح اللينك من Safari'));
+      steps.appendChild(stepRow(2, 'دوس زرار المشاركة', SVG_SHARE));
+      steps.appendChild(stepRow(3, 'اختار «إضافة إلى الشاشة الرئيسية»', SVG_ADD));
+      steps.appendChild(stepRow(4, 'افتح من الأيقونة وفعّل الإشعارات'));
+      card.appendChild(steps);
+    } else {
+      var how = el('ol', 'list-style:none;padding:18px 16px 6px;margin:0 0 8px;width:100%;max-width:340px;box-sizing:border-box;background:#fff;color:#1c1917;border-radius:18px');
+      how.id = 'uo-card-unblock';
+      if (isIOS) {
+        how.appendChild(stepRow(1, 'افتح إعدادات الآيفون'));
+        how.appendChild(stepRow(2, 'اختار «الإشعارات» ثم Unflagged'));
+        how.appendChild(stepRow(3, 'شغّل «السماح بالإشعارات»'));
+      } else if (standalone) {
+        how.appendChild(stepRow(1, 'افتح إعدادات الموبايل ← التطبيقات'));
+        how.appendChild(stepRow(2, 'اختار Unflagged ← الإشعارات'));
+        how.appendChild(stepRow(3, 'شغّل الإشعارات'));
+      } else {
+        how.appendChild(stepRow(1, 'دوس على القفل 🔒 جنب اللينك'));
+        how.appendChild(stepRow(2, 'اختار «الإشعارات» ← «سماح»'));
+        how.appendChild(stepRow(3, 'ارجع هنا'));
+      }
+      card.appendChild(how);
+    }
+
+    var later = el('button', 'margin-top:14px;min-height:46px;padding:0 22px;border:0;border-radius:14px;background:transparent;color:#a8a29e;font-size:16px;font-family:inherit', state === 'denied' ? 'تمام' : 'بعدين');
+    later.id = 'uo-card-later';
+    later.addEventListener('click', function () {
+      rememberLater();
+      removeCard();
+    });
+    card.appendChild(later);
+    document.body.appendChild(card);
+  }
+
+  function onEnableTap() {
+    if (!pushSupported()) return renderCard();
+    // This tap is on the top page itself, so the phone really shows its "Allow" question.
+    Promise.resolve(Notification.requestPermission()).then(function () {
+      var state = cardState();
+      if (!state) tellAppPermissionChanged();
+      renderCard();
+    });
+  }
+
+  function tellAppPermissionChanged() {
+    send({ type: 'status-changed' });
+  }
+
+  function installButton() {
+    var button = el('button', 'width:100%;max-width:340px;min-height:52px;margin-top:12px;border:2px solid #fff;border-radius:16px;background:transparent;color:#fff;font-size:18px;font-weight:700;font-family:inherit', 'ثبّت التطبيق');
+    button.id = 'uo-card-install';
+    button.addEventListener('click', runInstall);
+    return button;
+  }
+
+  function runInstall() {
+    var ev = installEvent;
+    if (!ev) return;
+    installEvent = null;
+    try {
+      ev.prompt();
+      Promise.resolve(ev.userChoice).then(function () { renderCard(); removeBar(); });
+    } catch (e) {
+      renderCard();
+    }
+  }
+
+  // After the card (or when notifications were already allowed): a small "install" strip that goes away by itself.
+  var bar = null;
+  function removeBar() {
+    if (bar) bar.remove();
+    bar = null;
+  }
+  function installDismissed() {
+    try { return Date.now() - Number(localStorage.getItem('uo_install_later') || 0) < 3 * 86400000; } catch (e) { return false; }
+  }
+  function showInstallBar() {
+    if (!installEvent || standalone || bar || installDismissed() || cardState() === 'ask') return;
+    bar = el('div', 'position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:15;background:#fff;color:#1c1917;border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif');
+    bar.id = 'uo-install-bar';
+    bar.appendChild(el('span', 'flex:1;font-size:16px;font-weight:700', 'ثبّت التطبيق على موبايلك'));
+    var yes = el('button', 'min-height:40px;padding:0 18px;border:0;border-radius:12px;background:#78350f;color:#fff;font-size:16px;font-weight:700;font-family:inherit', 'ثبّت');
+    yes.id = 'uo-install-yes';
+    yes.addEventListener('click', runInstall);
+    var no = el('button', 'min-height:40px;width:40px;border:0;background:transparent;color:#78716c;font-size:22px;font-family:inherit', '×');
+    no.setAttribute('aria-label', 'إغلاق');
+    no.addEventListener('click', function () {
+      try { localStorage.setItem('uo_install_later', String(Date.now())); } catch (e) { /* shown again */ }
+      removeBar();
+    });
+    bar.appendChild(yes);
+    bar.appendChild(no);
+    document.body.appendChild(bar);
+    setTimeout(removeBar, 15000);
+  }
+
+  window.addEventListener('beforeinstallprompt', function (event) {
+    event.preventDefault();
+    installEvent = event;
+    if (card && card.getAttribute('data-state') === 'ask') renderCard();
+    else showInstallBar();
+  });
+  window.addEventListener('appinstalled', function () {
+    installEvent = null;
+    removeBar();
+    renderCard();
+  });
+
+  // Coming back from the phone's settings: if it was allowed there, the card goes away by itself.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    var before = card && card.getAttribute('data-state');
+    var now = cardState();
+    if (before && !now) tellAppPermissionChanged();
+    if (before !== now) renderCard();
+  });
+
+  if (document.body) renderCard();
+  else document.addEventListener('DOMContentLoaded', renderCard);
+
   // A notification tapped while the app is already open.
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', function (event) {

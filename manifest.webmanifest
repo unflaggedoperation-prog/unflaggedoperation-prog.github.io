@@ -8,6 +8,7 @@
   "orientation": "portrait",
   "lang": "ar",
   "dir": "rtl",
+  "prefer_related_applications": false,
   "background_color": "#000000",
   "theme_color": "#000000",
   "icons": [
