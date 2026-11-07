@@ -6,7 +6,14 @@
 <meta name="theme-color" content="#000000">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src https://script.google.com https://*.googleusercontent.com; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self'; frame-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Unflagged">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png" type="image/png">
 <title>Unflagged Operation</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
@@ -15,8 +22,10 @@
 </head>
 <body>
 <iframe
+  id="app"
   src="https://script.google.com/macros/s/AKfycbwkWXOOfz-6pYf0MIVwI_LhoWX5ffiq9rxpq1gfownkDeVdPnRBDPtBUYWiFqB6-kKaYw/exec"
-  allow="camera; clipboard-write; fullscreen"
+  allow="camera; clipboard-write; fullscreen; web-share"
   title="Unflagged Operation"></iframe>
+<script src="page.js"></script>
 </body>
 </html>
