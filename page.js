@@ -187,6 +187,15 @@
     }
   }
 
+  // The opening screen above the frame goes away when the app says hello (or after a while, whatever happens).
+  function hideBoot() {
+    var boot = document.getElementById('boot');
+    if (!boot) return;
+    boot.style.opacity = '0';
+    setTimeout(function () { if (boot.parentNode) boot.parentNode.removeChild(boot); }, 400);
+  }
+  setTimeout(hideBoot, 25000);
+
   window.addEventListener('message', function (event) {
     if (!APP_ORIGIN.test(event.origin) || !insideOurFrame(event.source)) return;
     var data = event.data;
@@ -195,6 +204,7 @@
     appOrigin = event.origin;
     switch (data.type) {
       case 'hello':
+        hideBoot();
         info().then(function (i) {
           send({ type: 'hello', info: i, open: pendingOpen });
           pendingOpen = null;
