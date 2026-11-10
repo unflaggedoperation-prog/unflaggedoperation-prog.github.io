@@ -47,9 +47,45 @@
     var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 1500); });
     return Promise.race([swReady.then(function (reg) { return reg.pushManager.getSubscription(); }), timeout]).catch(function () { return null; });
   }
+  // The camera is shown by this page itself (scan.html in a frame of ours), which a phone lets use it even when the app
+  // sits inside Google's frame or was installed to the home screen.
+  function cameraHere() {
+    return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
+  }
+  var scanFrame = null;
+  var scanId = null;
+  function closeScan() {
+    if (scanFrame) scanFrame.remove();
+    scanFrame = null;
+    scanId = null;
+  }
+  function openScan(mode, id) {
+    closeScan();
+    if (!cameraHere() || !/^(document|photo)$/.test(mode) || typeof id !== 'string' || !/^[A-Za-z0-9_-]{4,40}$/.test(id)) {
+      return send({ type: 'scan-result', id: id, noCamera: true });
+    }
+    scanId = id;
+    scanFrame = document.createElement('iframe');
+    scanFrame.id = 'uo-scan';
+    scanFrame.setAttribute('allow', 'camera');
+    scanFrame.title = 'تصوير';
+    scanFrame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:30;background:#0c0a09';
+    scanFrame.src = 'scan.html#' + mode + ':' + id;
+    document.body.appendChild(scanFrame);
+  }
+  // The camera frame answers its own page (same address, same frame): the photo is handed on to the app.
+  window.addEventListener('message', function (event) {
+    if (event.origin !== location.origin || !scanFrame || event.source !== scanFrame.contentWindow) return;
+    var data = event.data;
+    if (!data || data.uo !== 1 || data.type !== 'scan-result' || data.id !== scanId) return;
+    var id = scanId;
+    closeScan();
+    send({ type: 'scan-result', id: id, file: data.file && typeof data.file.size === 'number' && typeof data.file.type === 'string' ? data.file : null, noCamera: data.noCamera === true });
+  });
+
   function info() {
     return currentSubscription().then(function (sub) {
-      return { push: pushSupported(), standalone: standalone, ios: isIOS, permission: permission(), subscribed: Boolean(sub) && permission() === 'granted' };
+      return { push: pushSupported(), standalone: standalone, ios: isIOS, permission: permission(), subscribed: Boolean(sub) && permission() === 'granted', scan: cameraHere() };
     });
   }
 
@@ -212,6 +248,27 @@
         break;
       case 'status':
         info().then(function (i) { send({ type: 'status', info: i }); });
+        break;
+      case 'scan-open':
+        openScan(data.mode, data.id);
+        break;
+      case 'scan-cancel':
+        if (scanId === data.id) closeScan();
+        break;
+      // A backup copy of the sign-in: the browser may wipe the app's own storage, but keeps this page's.
+      case 'session-save':
+        if (typeof data.token === 'string' && /^[a-f0-9]{64}$/.test(data.token)) {
+          try { localStorage.setItem('uo_session_copy', data.token); } catch (e) { /* no storage here */ }
+        }
+        break;
+      case 'session-clear':
+        try { localStorage.removeItem('uo_session_copy'); } catch (e) { /* no storage here */ }
+        break;
+      case 'session-load':
+        var kept = null;
+        try { kept = localStorage.getItem('uo_session_copy'); } catch (e) { kept = null; }
+        // Only our own frame is answered (checked above), and only with a token of the right shape.
+        send({ type: 'session', token: kept && /^[a-f0-9]{64}$/.test(kept) ? kept : null });
         break;
       case 'push-enable':
         enablePush(data.publicKey);
