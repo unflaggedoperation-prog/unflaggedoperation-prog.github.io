@@ -85,7 +85,7 @@
 
   function info() {
     return currentSubscription().then(function (sub) {
-      return { push: pushSupported(), standalone: standalone, ios: isIOS, permission: permission(), subscribed: Boolean(sub) && permission() === 'granted', scan: cameraHere() };
+      return { push: pushSupported(), standalone: standalone, ios: isIOS, permission: permission(), subscribed: Boolean(sub) && permission() === 'granted', scan: cameraHere(), brave: Boolean(navigator.brave) };
     });
   }
 
@@ -143,7 +143,10 @@
         send({ type: 'push-result', ok: true, subscription: sub.toJSON(), userAgent: navigator.userAgent });
       },
       function (err) {
-        send({ type: 'push-result', ok: false, reason: permission() === 'denied' || (err && err.name === 'NotAllowedError') ? 'denied' : 'failed' });
+        // "Registration failed - push service error" (AbortError): the browser cannot reach its push service. Brave turns
+        // Google's push service off by default, which is the usual reason there.
+        var name = err && err.name;
+        send({ type: 'push-result', ok: false, reason: permission() === 'denied' || name === 'NotAllowedError' ? 'denied' : name === 'AbortError' ? 'push-service' : 'failed' });
       }
     );
   }
