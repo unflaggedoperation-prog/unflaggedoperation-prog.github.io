@@ -202,7 +202,7 @@
   }
 
   function enablePush(publicKey) {
-    if (typeof publicKey !== 'string' || !/^[A-Za-z0-9_-]{80,100}$/.test(publicKey)) return;
+    if (typeof publicKey !== 'string' || !/^[A-Za-z0-9_-]{80,100}$/.test(publicKey)) return send({ type: 'push-result', ok: false, reason: 'failed' });
     if (isIOS && !standalone) return send({ type: 'push-result', ok: false, reason: 'ios-install' });
     if (!pushSupported()) return send({ type: 'push-result', ok: false, reason: 'unsupported' });
     var state = permission();
