@@ -7,7 +7,7 @@ self.addEventListener('install', function () {
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([self.clients.claim(), self.registration.navigationPreload ? self.registration.navigationPreload.enable().catch(function () {}) : null]));
 });
 
 // Opening the app with no internet shows a short message instead of the browser's error page.
@@ -15,7 +15,7 @@ self.addEventListener('activate', function (event) {
 self.addEventListener('fetch', function (event) {
   if (event.request.mode !== 'navigate') return;
   event.respondWith(
-    fetch(event.request).catch(function () {
+    (event.preloadResponse || Promise.resolve()).then(function (early) { return early || fetch(event.request); }).catch(function () {
       return new Response(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center" dir="rtl"><p style="font-size:20px">مفيش نت. افتح تاني لما يرجع.</p></body>',
         { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
