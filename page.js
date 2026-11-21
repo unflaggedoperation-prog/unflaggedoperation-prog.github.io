@@ -44,7 +44,7 @@
   }
   function currentSubscription() {
     if (!pushSupported()) return Promise.resolve(null);
-    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 1500); });
+    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 600); });
     return Promise.race([swReady.then(function (reg) { return reg.pushManager.getSubscription(); }), timeout]).catch(function () { return null; });
   }
   // The camera is shown by this page itself (scan.html in a frame of ours), which a phone lets use it even when the app
@@ -244,9 +244,13 @@
     switch (data.type) {
       case 'hello':
         hideBoot();
-        info().then(function (i) {
-          send({ type: 'hello', info: i, open: pendingOpen });
+        // The screen a tapped notification wants goes first: it must not wait for the push check below.
+        if (pendingOpen) {
+          send({ type: 'open', target: pendingOpen });
           pendingOpen = null;
+        }
+        info().then(function (i) {
+          send({ type: 'hello', info: i });
         });
         break;
       case 'status':
