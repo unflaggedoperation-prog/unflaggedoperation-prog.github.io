@@ -1,6 +1,7 @@
 // The cafe's own page: it holds the Google app in a frame, and does what only a top page may do:
 // ask for notifications, keep the background helper (sw.js), put a number on the app icon, and catch
-// the phone's back button while a photo is open. It talks to the app by message, and only to the app.
+// the phone's back button while a photo is open or while the app is inside one of its screens.
+// It talks to the app by message, and only to the app.
 (function () {
   'use strict';
 
@@ -10,7 +11,8 @@
   var appWindow = null;
   var appOrigin = null;
   var viewerOpen = false;
-  var ignorePop = false;
+  var navGuard = false; // one entry kept while the app has a screen or a layer to go back to
+  var ignorePop = 0; // pops this page caused by itself, so they are not taken for the phone's back
 
   var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -296,22 +298,43 @@
         break;
       case 'viewer-close':
         if (viewerOpen && history.state && history.state.uoViewer) {
-          ignorePop = true;
+          ignorePop++;
           history.back();
         }
         viewerOpen = false;
+        break;
+      // The app says how much there is to go back to (a screen below, or the menu, or a question):
+      // while that is above zero one entry is kept here, so the phone's back comes back into the app.
+      case 'nav':
+        var depth = Number(data.depth) || 0;
+        if (depth > 0) {
+          if (!navGuard) {
+            navGuard = true;
+            history.pushState({ uoNav: 1 }, '');
+          }
+        } else if (navGuard) {
+          navGuard = false;
+          ignorePop++;
+          history.back();
+        }
         break;
     }
   });
 
   // The phone's back button while a photo is open: it closes the photo and stays in the app.
+  // Otherwise, while an entry of ours is on top, it goes back one screen inside the app.
   window.addEventListener('popstate', function () {
-    if (ignorePop) {
-      ignorePop = false;
+    if (ignorePop > 0) {
+      ignorePop--;
       return;
     }
     if (viewerOpen) {
       viewerOpen = false;
+      send({ type: 'back' });
+      return;
+    }
+    if (navGuard) {
+      navGuard = false;
       send({ type: 'back' });
     }
   });
