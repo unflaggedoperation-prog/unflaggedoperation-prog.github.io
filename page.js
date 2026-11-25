@@ -11,6 +11,24 @@
   var appWindow = null;
   var appOrigin = null;
   var viewerOpen = false;
+
+  // One lasting id for this phone, so two phones of the same model both keep getting notifications.
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('uo-device-id');
+      if (id && /^[A-Za-z0-9_-]{8,64}$/.test(id)) return id;
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      id = btoa(String.fromCharCode.apply(null, bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      localStorage.setItem('uo-device-id', id);
+      return id;
+    } catch (e) { return undefined; }
+  }
+
+  // The background helper needs the app's address to tell it when the phone renews its notification address.
+  try {
+    if (frame && self.caches) caches.open('uo-config').then(function (c) { return c.put('exec-url', new Response(frame.getAttribute('src') || '')); }).catch(function () {});
+  } catch (e) { /* ignore */ }
   var navGuard = false; // one entry kept while the app has a screen or a layer to go back to
   var ignorePop = 0; // pops this page caused by itself, so they are not taken for the phone's back
 
@@ -142,7 +160,7 @@
   function answerPush(publicKey) {
     return subscribe(publicKey).then(
       function (sub) {
-        send({ type: 'push-result', ok: true, subscription: sub.toJSON(), userAgent: navigator.userAgent });
+        send({ type: 'push-result', ok: true, subscription: sub.toJSON(), userAgent: navigator.userAgent, deviceId: deviceId() });
       },
       function (err) {
         // "Registration failed - push service error" (AbortError): the browser cannot reach its push service. Brave turns

@@ -1,5 +1,6 @@
 // The background helper: shows a notification with sound when a message arrives, even with the app closed,
 // keeps the number on the app icon, and opens the right screen when the notification is tapped.
+// Version: 2026-11-25 push-reliable
 'use strict';
 
 self.addEventListener('install', function () {
@@ -73,4 +74,28 @@ self.addEventListener('notificationclick', function (event) {
       return self.clients.openWindow(url);
     })
   );
+});
+
+// The phone renewed (or dropped) its notification address while the app was closed: subscribe again
+// and tell the app the new address, so notifications keep coming without opening the app.
+self.addEventListener('pushsubscriptionchange', function (event) {
+  var old = event.oldSubscription;
+  event.waitUntil((function () {
+    var next = event.newSubscription
+      ? Promise.resolve(event.newSubscription)
+      : self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: old && old.options ? old.options.applicationServerKey : undefined });
+    return next.then(function (sub) {
+      if (!old || !sub) return;
+      return caches.open('uo-config').then(function (c) { return c.match('exec-url'); }).then(function (res) {
+        return res ? res.text() : '';
+      }).then(function (execUrl) {
+        execUrl = String(execUrl || '').split('?')[0];
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(execUrl)) return;
+        return fetch(execUrl, {
+          method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ requests: [{ method: 'POST', path: '/api/push/rotate', body: { oldEndpoint: old.endpoint, subscription: sub.toJSON() } }] }),
+        });
+      });
+    }).catch(function () {});
+  })());
 });
