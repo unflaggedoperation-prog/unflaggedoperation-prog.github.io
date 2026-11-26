@@ -11,6 +11,20 @@
   var appWindow = null;
   var appOrigin = null;
   var viewerOpen = false;
+  var navGuard = false; // our entries are on top of the history while the app is in the frame
+  // A few entries of ours on top, so even several fast swipes in a row land on one of them and
+  // never reach the frame's own history (that is what loaded for long, then went white).
+  var GUARDS = 3;
+  function guardLevel() {
+    var s = history.state;
+    return s && typeof s.uoNav === 'number' ? s.uoNav : 0;
+  }
+  function ensureGuard() {
+    try {
+      for (var n = guardLevel(); n < GUARDS; n++) history.pushState({ uoNav: n + 1 }, '');
+      navGuard = true;
+    } catch (e) { /* no history here */ }
+  }
 
   // One lasting id for this phone, so two phones of the same model both keep getting notifications.
   function deviceId() {
@@ -29,8 +43,6 @@
   try {
     if (frame && self.caches) caches.open('uo-config').then(function (c) { return c.put('exec-url', new Response(frame.getAttribute('src') || '')); }).catch(function () {});
   } catch (e) { /* ignore */ }
-  var navGuard = false; // one entry kept while the app has a screen or a layer to go back to
-  var ignorePop = 0; // pops this page caused by itself, so they are not taken for the phone's back
 
   var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -261,6 +273,9 @@
     if (!data || data.uo !== 1 || typeof data.type !== 'string') return;
     appWindow = event.source;
     appOrigin = event.origin;
+    // Our app is in the frame: from now on one entry of ours always sits on top, so the phone's back
+    // always comes to the app first and never pops the frame's own entries (a long load, then white).
+    ensureGuard();
     switch (data.type) {
       case 'hello':
         hideBoot();
@@ -310,51 +325,30 @@
       case 'badge':
         setBadge(data.count);
         break;
+      // A photo open or closed: the guard entry above already catches the back; the app routes it.
       case 'viewer-open':
-        if (!viewerOpen) history.pushState({ uoViewer: 1 }, '');
         viewerOpen = true;
         break;
       case 'viewer-close':
-        if (viewerOpen && history.state && history.state.uoViewer) {
-          ignorePop++;
-          history.back();
-        }
         viewerOpen = false;
         break;
-      // The app says how much there is to go back to (a screen below, or the menu, or a question):
-      // while that is above zero one entry is kept here, so the phone's back comes back into the app.
+      // The app says how much there is to go back to. The guard stays even at zero: the app then
+      // stays where it is, instead of the page going back into the frame's own history.
       case 'nav':
-        var depth = Number(data.depth) || 0;
-        if (depth > 0) {
-          if (!navGuard) {
-            navGuard = true;
-            history.pushState({ uoNav: 1 }, '');
-          }
-        } else if (navGuard) {
-          navGuard = false;
-          ignorePop++;
-          history.back();
-        }
+        ensureGuard();
         break;
     }
   });
 
-  // The phone's back button while a photo is open: it closes the photo and stays in the app.
-  // Otherwise, while an entry of ours is on top, it goes back one screen inside the app.
+  // The phone's back: our entry is put back at once (so a second quick swipe is caught too), and the
+  // app is told, exactly like its own back button: it closes the photo, the layer on top, or goes
+  // back one screen; on the first screen it stays.
   window.addEventListener('popstate', function () {
-    if (ignorePop > 0) {
-      ignorePop--;
-      return;
-    }
-    if (viewerOpen) {
-      viewerOpen = false;
-      send({ type: 'back' });
-      return;
-    }
-    if (navGuard) {
-      navGuard = false;
-      send({ type: 'back' });
-    }
+    if (!navGuard || !appWindow) return;
+    var backs = Math.max(1, GUARDS - guardLevel());
+    ensureGuard();
+    viewerOpen = false;
+    for (var i = 0; i < backs; i++) send({ type: 'back' });
   });
 
   // ---- The first thing a person sees: ask for notifications with one big tap, and offer to install ----
