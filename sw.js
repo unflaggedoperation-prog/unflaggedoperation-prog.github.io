@@ -1,6 +1,6 @@
 // The background helper: shows a notification with sound when a message arrives, even with the app closed,
 // keeps the number on the app icon, and opens the right screen when the notification is tapped.
-// Version: 2026-11-25 push-reliable
+// Version: 2026-11-27 fresh-page
 'use strict';
 
 self.addEventListener('install', function () {
@@ -8,7 +8,7 @@ self.addEventListener('install', function () {
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(Promise.all([self.clients.claim(), self.registration.navigationPreload ? self.registration.navigationPreload.enable().catch(function () {}) : null]));
+  event.waitUntil(Promise.all([self.clients.claim(), self.registration.navigationPreload ? self.registration.navigationPreload.disable().catch(function () {}) : null]));
 });
 
 // Opening the app with no internet shows a short message instead of the browser's error page.
@@ -16,7 +16,8 @@ self.addEventListener('activate', function (event) {
 self.addEventListener('fetch', function (event) {
   if (event.request.mode !== 'navigate') return;
   event.respondWith(
-    (event.preloadResponse || Promise.resolve()).then(function (early) { return early || fetch(event.request); }).catch(function () {
+    // Always ask GitHub for the newest page (a quick 304 when unchanged), so a fix shows on the next open, not 10 minutes later.
+    fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' }).catch(function () {
       return new Response(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center" dir="rtl"><p style="font-size:20px">مفيش نت. افتح تاني لما يرجع.</p></body>',
         { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
