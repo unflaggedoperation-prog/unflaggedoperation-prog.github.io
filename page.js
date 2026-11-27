@@ -20,11 +20,17 @@
     return s && typeof s.uoNav === 'number' ? s.uoNav : 0;
   }
   function ensureGuard() {
+    if (exiting) return;
     try {
       for (var n = guardLevel(); n < GUARDS; n++) history.pushState({ uoNav: n + 1 }, '');
       navGuard = true;
     } catch (e) { /* no history here */ }
   }
+  var exiting = false;   // «خروج» was chosen: no more guards, let the browser leave
+  var pendingBack = false; // a back that came before the app was ready
+  var lastBack = 0;
+  // Guards go in before the app even loads, so a back during the load never reaches the frame.
+  ensureGuard();
 
   // One lasting id for this phone, so two phones of the same model both keep getting notifications.
   function deviceId() {
@@ -279,6 +285,7 @@
     switch (data.type) {
       case 'hello':
         hideBoot();
+        if (pendingBack) { pendingBack = false; send({ type: 'back' }); }
         // The screen a tapped notification wants goes first: it must not wait for the push check below.
         if (pendingOpen) {
           send({ type: 'open', target: pendingOpen });
@@ -337,6 +344,17 @@
       case 'nav':
         ensureGuard();
         break;
+      // «خروج» on the first screen: drop our entries and go back past this page.
+      case 'exit':
+        exiting = true;
+        navGuard = false;
+        var n = guardLevel();
+        try {
+          if (history.length > n + 1) history.go(-(n + 1));
+          else if (n) history.go(-n);
+        } catch (e) { /* nothing to go back to */ }
+        setTimeout(function () { try { window.close(); } catch (e) { /* browser keeps the tab */ } }, 300);
+        break;
     }
   });
 
@@ -344,11 +362,15 @@
   // app is told, exactly like its own back button: it closes the photo, the layer on top, or goes
   // back one screen; on the first screen it stays.
   window.addEventListener('popstate', function () {
-    if (!navGuard || !appWindow) return;
-    var backs = Math.max(1, GUARDS - guardLevel());
+    if (!navGuard) return;
     ensureGuard();
     viewerOpen = false;
-    for (var i = 0; i < backs; i++) send({ type: 'back' });
+    // Many swipes in a row: one back each, never a burst (a burst used to empty the guards).
+    var now = Date.now();
+    if (now - lastBack < 120) return;
+    lastBack = now;
+    if (!appWindow) { pendingBack = true; return; }
+    send({ type: 'back' });
   });
 
   // ---- The first thing a person sees: ask for notifications with one big tap, and offer to install ----
