@@ -19,18 +19,52 @@
     var s = history.state;
     return s && typeof s.uoNav === 'number' ? s.uoNav : 0;
   }
-  function ensureGuard() {
-    if (exiting) return;
+  // Chrome lets the phone's back skip any entry a page pushed without a tap first (its guard against
+  // pages that trap the back). Such guards were skipped: the back went into the frame's own history
+  // (flicker, then white) or out of the page, and «leave the app?» never came. So guards go in only
+  // while a tap is fresh: a tap on this page, or a tap in the app (it tells us at once, and the tap
+  // counts for this page too).
+  function tapFresh() {
+    var ua = navigator.userActivation;
+    return ua ? ua.isActive : true;
+  }
+  function armGuard() {
+    if (exiting || !tapFresh()) return;
     try {
       for (var n = guardLevel(); n < GUARDS; n++) history.pushState({ uoNav: n + 1 }, '');
-      navGuard = true;
+      if (guardLevel() > 0) navGuard = true;
     } catch (e) { /* no history here */ }
+    armWatcher();
   }
   var exiting = false;   // «خروج» was chosen: no more guards, let the browser leave
   var pendingBack = false; // a back that came before the app was ready
-  var lastBack = 0;
-  // Guards go in before the app even loads, so a back during the load never reaches the frame.
-  ensureGuard();
+  // A tap on this page itself (the boot screen, the notification ask) arms the guards too.
+  window.addEventListener('pointerdown', armGuard, true);
+  window.addEventListener('keydown', armGuard, true);
+
+  // Newer Android Chrome sends the back to a close watcher first, before the history: no entry is
+  // used up, so the back always comes to the app. Older phones fall back to the guards above.
+  var watcher = null;
+  var useWatcher = typeof window.CloseWatcher === 'function' && /Android/i.test(navigator.userAgent || '');
+  function armWatcher() {
+    if (!useWatcher || exiting || watcher) return;
+    try {
+      watcher = new window.CloseWatcher();
+      watcher.onclose = function () {
+        watcher = null;
+        phoneBack();
+        armWatcher();
+      };
+    } catch (e) { watcher = null; }
+  }
+  function dropWatcher() {
+    if (!watcher) return;
+    var w = watcher;
+    watcher = null;
+    try { w.destroy(); } catch (e) { /* already gone */ }
+  }
+  // Before any tap: one watcher is allowed without one, so even the first back asks before leaving.
+  armWatcher();
 
   // One lasting id for this phone, so two phones of the same model both keep getting notifications.
   function deviceId() {
@@ -279,10 +313,11 @@
     if (!data || data.uo !== 1 || typeof data.type !== 'string') return;
     appWindow = event.source;
     appOrigin = event.origin;
-    // Our app is in the frame: from now on one entry of ours always sits on top, so the phone's back
-    // always comes to the app first and never pops the frame's own entries (a long load, then white).
-    ensureGuard();
     switch (data.type) {
+      // A tap in the app: the tap is fresh here too, so the guards can go in now.
+      case 'tap':
+        armGuard();
+        break;
       case 'hello':
         hideBoot();
         if (pendingBack) { pendingBack = false; send({ type: 'back' }); }
@@ -342,12 +377,13 @@
       // The app says how much there is to go back to. The guard stays even at zero: the app then
       // stays where it is, instead of the page going back into the frame's own history.
       case 'nav':
-        ensureGuard();
+        armGuard();
         break;
       // «خروج» on the first screen: drop our entries and go back past this page.
       case 'exit':
         exiting = true;
         navGuard = false;
+        dropWatcher();
         var n = guardLevel();
         try {
           if (history.length > n + 1) history.go(-(n + 1));
@@ -361,16 +397,18 @@
   // The phone's back: our entry is put back at once (so a second quick swipe is caught too), and the
   // app is told, exactly like its own back button: it closes the photo, the layer on top, or goes
   // back one screen; on the first screen it stays.
-  window.addEventListener('popstate', function () {
-    if (!navGuard) return;
-    ensureGuard();
+  // Nothing here reloads or moves the frame: the app is only told.
+  function phoneBack() {
     viewerOpen = false;
-    // Many swipes in a row: one back each, never a burst (a burst used to empty the guards).
-    var now = Date.now();
-    if (now - lastBack < 120) return;
-    lastBack = now;
     if (!appWindow) { pendingBack = true; return; }
     send({ type: 'back' });
+  }
+  window.addEventListener('popstate', function () {
+    if (!navGuard || exiting) return;
+    // One of our guards was used up: each one is one back in the app. It is put back only while a
+    // tap is still fresh (otherwise on the next tap), never without one.
+    armGuard();
+    phoneBack();
   });
 
   // ---- The first thing a person sees: ask for notifications with one big tap, and offer to install ----
