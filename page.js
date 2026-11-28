@@ -38,6 +38,7 @@
   }
   var exiting = false;   // «خروج» was chosen: no more guards, let the browser leave
   var pendingBack = false; // a back that came before the app was ready
+  var appSrc = frame ? frame.getAttribute('src') : '';
   // A tap on this page itself (the boot screen, the notification ask) arms the guards too.
   window.addEventListener('pointerdown', armGuard, true);
   window.addEventListener('keydown', armGuard, true);
@@ -65,6 +66,26 @@
   }
   // Before any tap: one watcher is allowed without one, so even the first back asks before leaving.
   armWatcher();
+
+  // A phone can put this page in its cache after «خروج» and bring it back with exiting still true and
+  // the frame on its empty first page. That is the stuck white screen after closing and reopening.
+  // The frame is on Google's address, so its location cannot be read here; a cached restore is the one
+  // safe moment to load it again (the person is opening the app, not moving inside it).
+  function reopenState(reload) {
+    exiting = false;
+    navGuard = guardLevel() > 0;
+    dropWatcher();
+    armWatcher();
+    if (reload && frame) {
+      try { frame.src = appSrc; } catch (e) { /* no frame here */ }
+    }
+  }
+  window.addEventListener('pageshow', function (event) {
+    reopenState(Boolean(event && event.persisted));
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && exiting) reopenState(true);
+  });
 
   // One lasting id for this phone, so two phones of the same model both keep getting notifications.
   function deviceId() {
@@ -418,11 +439,19 @@
   var installEvent = null;
   var card = null;
 
+  // «بعدين» must stick after closing the app, or a shortcut opens the black notification card first
+  // and the staff member has to press twice to reach the app. Keep it where the browser keeps it.
+  function laterStore() {
+    try { if (localStorage) return localStorage; } catch (e) { /* private mode */ }
+    try { return sessionStorage; } catch (e) { return null; }
+  }
   function laterThisSession() {
-    try { return sessionStorage.getItem('uo_card_later') === '1'; } catch (e) { return false; }
+    var store = laterStore();
+    try { return !!store && store.getItem('uo_card_later') === '1'; } catch (e) { return false; }
   }
   function rememberLater() {
-    try { sessionStorage.setItem('uo_card_later', '1'); } catch (e) { /* shown again next time */ }
+    var store = laterStore();
+    try { if (store) store.setItem('uo_card_later', '1'); } catch (e) { /* shown again next time */ }
   }
 
   function cardState() {
