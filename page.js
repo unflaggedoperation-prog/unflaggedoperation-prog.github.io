@@ -81,7 +81,10 @@
     }
   }
   window.addEventListener('pageshow', function (event) {
-    reopenState(Boolean(event && event.persisted));
+    // Only a return after «خروج» needs the frame loaded again. Reloading on an ordinary back made a
+    // fresh frame entry, so the next back slipped into Google's empty page instead of the app.
+    var wasExiting = exiting;
+    reopenState(wasExiting && Boolean(event && event.persisted));
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && exiting) reopenState(true);
